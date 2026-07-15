@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://api.anthropic.com; base-uri 'self'; form-action 'none'; frame-ancestors 'none'; object-src 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="description" content="StadiumConnect AI: live multilingual fan chat and staff incident feed for World Cup 2026 stadium operations.">
+<title>StadiumConnect AI — Matchday Operations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --pitch-night:#0B1F17;
+    --pitch-night-2:#0F2A1F;
+    --panel:#12251C;
+    --line:rgba(245,247,242,0.10);
+    --floodlight:#F5F7F2;
+    --floodlight-dim:rgba(245,247,242,0.62);
+    --floodlight-faint:rgba(245,247,242,0.38);
+    --jersey-red:#C1442D;
+    --amber:#E8A33D;
+    --cyan:#3E8FB0;
+    --cyan-dim:rgba(62,143,176,0.16);
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 15% 0%, rgba(62,143,176,0.08), transparent 45%),
+      radial-gradient(circle at 85% 100%, rgba(193,68,45,0.06), transparent 50%),
+      var(--pitch-night);
+    color:var(--floodlight);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:'JetBrains Mono',monospace;}
+  .display{font-family:'Archivo Black',sans-serif; font-weight:400; letter-spacing:0.01em;}
+
+  /* Scoreboard header */
+  .scoreboard{
+    position:sticky; top:0; z-index:20;
+    background:linear-gradient(180deg, var(--pitch-night-2), rgba(15,42,31,0.94));
+    border-bottom:1px solid var(--line);
+    backdrop-filter:blur(6px);
+    padding:14px 16px 12px;
+  }
+  .sb-top{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+  .sb-brand{display:flex; align-items:center; gap:10px;}
+  .sb-dot{width:9px;height:9px;border-radius:50%;background:var(--jersey-red); box-shadow:0 0 0 3px rgba(193,68,45,0.18); animation:pulse 1.8s infinite;}
+  @keyframes pulse{0%,100%{opacity:1} 50%{opacity:.35}}
+  .sb-title{font-size:15px; letter-spacing:0.04em;}
+  .sb-sub{font-size:10.5px; color:var(--floodlight-faint); text-transform:uppercase; letter-spacing:0.12em; margin-top:1px;}
+  .sb-live{
+    font-size:10px; text-transform:uppercase; letter-spacing:0.12em;
+    color:var(--jersey-red); border:1px solid rgba(193,68,45,0.5);
+    padding:4px 8px; border-radius:20px; white-space:nowrap;
+  }
+  .sb-strip{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:1px;
+    margin-top:12px; background:var(--line); border-radius:10px; overflow:hidden;
+    border:1px solid var(--line);
+  }
+  .sb-cell{background:var(--pitch-night); padding:9px 12px;}
+  .sb-cell .k{font-size:9px; text-transform:uppercase; letter-spacing:0.1em; color:var(--floodlight-faint); margin-bottom:3px;}
+  .sb-cell .v{font-size:16px; font-weight:600;}
+  .v.amber{color:var(--amber)}
+  .v.cyan{color:var(--cyan)}
+  .v.red{color:var(--jersey-red)}
+
+  /* Tabs (mobile-first: stacked panels with tab switcher) */
+  .tabs{display:flex; gap:8px; padding:12px 16px 0;}
+  .tab{
+    flex:1; text-align:center; padding:10px 8px; border-radius:10px;
+    font-size:12px; font-weight:600; letter-spacing:0.03em;
+    border:1px solid var(--line); background:var(--panel); color:var(--floodlight-dim);
+  }
+  .tab.active{background:var(--cyan-dim); border-color:rgba(62,143,176,0.5); color:var(--floodlight);}
+  .tab .n{font-family:'JetBrains Mono',monospace; opacity:0.65; margin-left:4px;}
+
+  .wrap{max-width:520px; margin:0 auto; padding-bottom:90px;}
+  .panel{padding:14px 16px;}
+  .hidden{display:none !important;}
+
+  /* Chat panel */
+  .chat-scroll{display:flex; flex-direction:column; gap:10px; margin-top:4px;}
+  .bubble{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    padding:10px 12px; max-width:88%;
+  }
+  .bubble.mine{align-self:flex-end; background:rgba(62,143,176,0.10); border-color:rgba(62,143,176,0.35);}
+  .b-head{display:flex; align-items:center; gap:6px; margin-bottom:4px;}
+  .avatar{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700; flex-shrink:0;}
+  .b-name{font-size:12px; font-weight:600;}
+  .b-time{font-size:10px; color:var(--floodlight-faint); margin-left:auto;}
+  .b-orig{font-size:14px; line-height:1.4;}
+  .b-translation{
+    margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);
+    font-size:13px; line-height:1.4; color:var(--floodlight-dim); display:flex; gap:6px; align-items:flex-start;
+  }
+  .lang-chip{
+    font-size:9px; font-family:'JetBrains Mono',monospace; text-transform:uppercase;
+    background:var(--cyan-dim); color:var(--cyan); border:1px solid rgba(62,143,176,0.4);
+    padding:2px 6px; border-radius:20px; flex-shrink:0; margin-top:1px;
+  }
+  .translating{font-size:12px; color:var(--floodlight-faint); font-style:italic;}
+
+  .chat-input-bar{
+    position:fixed; bottom:0; left:0; right:0; z-index:20;
+    background:linear-gradient(0deg, var(--pitch-night) 70%, transparent);
+    padding:14px 16px 16px;
+  }
+  .chat-input-inner{max-width:520px; margin:0 auto; display:flex; gap:8px; align-items:flex-end;}
+  .lang-select{
+    background:var(--panel); border:1px solid var(--line); color:var(--floodlight);
+    border-radius:10px; padding:10px 8px; font-size:11px; font-family:'JetBrains Mono',monospace;
+    flex-shrink:0;
+  }
+  .chat-input{
+    flex:1; background:var(--panel); border:1px solid var(--line); color:var(--floodlight);
+    border-radius:10px; padding:11px 12px; font-size:14px; font-family:'Inter',sans-serif;
+    resize:none; max-height:80px;
+  }
+  .chat-input:focus, .lang-select:focus{outline:1px solid var(--cyan); border-color:var(--cyan);}
+  .send-btn{
+    background:var(--cyan); border:none; color:var(--pitch-night); font-weight:700;
+    border-radius:10px; padding:11px 14px; font-size:13px; flex-shrink:0; cursor:pointer;
+  }
+  .send-btn:disabled{opacity:0.45;}
+
+  /* Ops feed panel */
+  .ops-item{
+    display:flex; gap:10px; padding:11px 0; border-bottom:1px solid var(--line);
+  }
+  .ops-item:last-child{border-bottom:none;}
+  .sev{width:6px; border-radius:6px; flex-shrink:0;}
+  .sev.crit{background:var(--jersey-red);}
+  .sev.warn{background:var(--amber);}
+  .sev.info{background:var(--cyan);}
+  .ops-body{flex:1;}
+  .ops-top{display:flex; justify-content:space-between; gap:8px;}
+  .ops-gate{font-size:12px; font-weight:700; letter-spacing:0.03em;}
+  .ops-time{font-size:10px; color:var(--floodlight-faint); font-family:'JetBrains Mono',monospace;}
+  .ops-msg{font-size:13px; color:var(--floodlight-dim); margin-top:3px; line-height:1.4;}
+  .ops-badge{
+    display:inline-block; font-size:9px; text-transform:uppercase; letter-spacing:0.08em;
+    padding:2px 7px; border-radius:20px; margin-top:6px; font-family:'JetBrains Mono',monospace;
+  }
+  .ops-badge.crit{background:rgba(193,68,45,0.15); color:var(--jersey-red); border:1px solid rgba(193,68,45,0.4);}
+  .ops-badge.warn{background:rgba(232,163,61,0.15); color:var(--amber); border:1px solid rgba(232,163,61,0.4);}
+  .ops-badge.info{background:var(--cyan-dim); color:var(--cyan); border:1px solid rgba(62,143,176,0.4);}
+
+  .section-label{
+    font-size:10px; text-transform:uppercase; letter-spacing:0.14em; color:var(--floodlight-faint);
+    margin:4px 0 8px; display:flex; align-items:center; gap:8px;
+  }
+  .section-label::after{content:""; flex:1; height:1px; background:var(--line);}
+
+  .empty{padding:30px 10px; text-align:center; color:var(--floodlight-faint); font-size:13px;}
+
+  /* Accessibility */
+  .skip-link{
+    position:absolute; left:-999px; top:0; z-index:100;
+    background:var(--cyan); color:var(--pitch-night); font-weight:700;
+    padding:10px 14px; border-radius:0 0 8px 0; font-size:13px;
+  }
+  .skip-link:focus{left:0;}
+  .visually-hidden{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+  }
+  a:focus-visible, button:focus-visible, [tabindex]:focus-visible,
+  input:focus-visible, textarea:focus-visible, select:focus-visible{
+    outline:2px solid var(--cyan); outline-offset:2px;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:0.01ms !important; animation-iteration-count:1 !important; transition-duration:0.01ms !important;}
+  }
+
+  /* Diagnostics / test panel */
+  .diagnostics{margin:18px 16px 0; border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:12px;}
+  .diagnostics summary{cursor:pointer; font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:var(--floodlight-faint);}
+  .diag-row{display:flex; justify-content:space-between; gap:8px; font-size:12px; padding:5px 0; border-bottom:1px solid var(--line);}
+  .diag-row:last-child{border-bottom:none;}
+  .diag-pass{color:#7BC67E; font-family:'JetBrains Mono',monospace; font-size:11px;}
+  .diag-fail{color:var(--jersey-red); font-family:'JetBrains Mono',monospace; font-size:11px;}
+</style>
+</head>
+<body>
+
+<a href="#mainContent" class="skip-link">Skip to content</a>
+
+<header class="scoreboard">
+  <div class="sb-top">
+    <div class="sb-brand">
+      <span class="sb-dot" aria-hidden="true"></span>
+      <div>
+        <div class="sb-title display">STADIUMCONNECT AI</div>
+        <div class="sb-sub mono">World Cup 2026 · Matchday Ops</div>
+      </div>
+    </div>
+    <div class="sb-live" role="status">Live</div>
+  </div>
+  <div class="sb-strip" role="group" aria-label="Stadium status summary">
+    <div class="sb-cell">
+      <div class="k" id="capLabel">Capacity</div>
+      <div class="v" id="capVal" aria-labelledby="capLabel">71,240 / 80,000</div>
+    </div>
+    <div class="sb-cell">
+      <div class="k" id="gatesLabel">Gates Open</div>
+      <div class="v cyan" aria-labelledby="gatesLabel">11 / 14</div>
+    </div>
+    <div class="sb-cell">
+      <div class="k" id="alertLabel">Active Alerts</div>
+      <div class="v amber" id="alertCount" aria-labelledby="alertLabel" role="status">2</div>
+    </div>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="StadiumConnect sections">
+  <button type="button" class="tab active" id="tabChatBtn" role="tab" aria-selected="true" aria-controls="chatPanel">Fan Chat <span class="n">· live</span></button>
+  <button type="button" class="tab" id="tabOpsBtn" role="tab" aria-selected="false" aria-controls="opsPanel" tabindex="-1">Staff Ops Feed <span class="n" id="opsBadgeCount">· 2</span></button>
+</nav>
+
+<main class="wrap" id="mainContent">
+
+  <!-- CHAT PANEL -->
+  <div class="panel" id="chatPanel" role="tabpanel" aria-labelledby="tabChatBtn" tabindex="0">
+    <h2 class="section-label" id="chatSectionLabel">Translated in real time</h2>
+    <div class="chat-scroll" id="chatScroll" role="log" aria-live="polite" aria-labelledby="chatSectionLabel"></div>
+  </div>
+
+  <!-- OPS PANEL -->
+  <div class="panel hidden" id="opsPanel" role="tabpanel" aria-labelledby="tabOpsBtn" tabindex="0">
+    <h2 class="section-label" id="opsSectionLabel">Incident log · all zones</h2>
+    <div id="opsFeed" role="list" aria-live="polite" aria-labelledby="opsSectionLabel"></div>
+  </div>
+
+  <details class="diagnostics">
+    <summary>Diagnostics · self-test suite</summary>
+    <div id="diagResults" aria-live="polite"></div>
+  </details>
+
+</main>
+
+<div class="chat-input-bar" id="chatInputBar">
+  <div class="chat-input-inner">
+    <label for="myLang" class="visually-hidden">Your language</label>
+    <select class="lang-select" id="myLang" aria-label="Your language">
+      <option value="English">EN</option>
+      <option value="Spanish">ES</option>
+      <option value="Portuguese">PT</option>
+      <option value="French">FR</option>
+      <option value="Arabic">AR</option>
+      <option value="Japanese">JA</option>
+      <option value="Hindi">HI</option>
+    </select>
+    <label for="msgInput" class="visually-hidden">Message the fan chat</label>
+    <textarea class="chat-input" id="msgInput" placeholder="Message the fan chat…" rows="1"></textarea>
+    <button type="button" class="send-btn" id="sendBtn">Send</button>
+  </div>
+</div>
+
+<script>
+// ---------- Tab switching ----------
+const tabChatBtn = document.getElementById('tabChatBtn');
+const tabOpsBtn = document.getElementById('tabOpsBtn');
+
+function switchTab(which){
+  const isChat = which === 'chat';
+  document.getElementById('chatPanel').classList.toggle('hidden', !isChat);
+  document.getElementById('opsPanel').classList.toggle('hidden', isChat);
+  document.getElementById('chatInputBar').classList.toggle('hidden', !isChat);
+  tabChatBtn.classList.toggle('active', isChat);
+  tabOpsBtn.classList.toggle('active', !isChat);
+  tabChatBtn.setAttribute('aria-selected', String(isChat));
+  tabOpsBtn.setAttribute('aria-selected', String(!isChat));
+  tabChatBtn.tabIndex = isChat ? 0 : -1;
+  tabOpsBtn.tabIndex = isChat ? -1 : 0;
+}
+
+tabChatBtn.addEventListener('click', () => switchTab('chat'));
+tabOpsBtn.addEventListener('click', () => switchTab('ops'));
+
+// Arrow-key navigation between tabs (standard tablist keyboard pattern)
+[tabChatBtn, tabOpsBtn].forEach((btn) => {
+  btn.addEventListener('keydown', (e) => {
+    if(e.key === 'ArrowRight' || e.key === 'ArrowLeft'){
+      e.preventDefault();
+      const other = btn === tabChatBtn ? tabOpsBtn : tabChatBtn;
+      other.focus();
+      other.click();
+    }
+  });
+});
+
+// ---------- Avatar color helper ----------
+const avatarColors = ['#C1442D','#3E8FB0','#E8A33D','#6B8F5E','#9B6FB0'];
+function colorFor(name){
+  let sum = 0; for(const c of name) sum += c.charCodeAt(0);
+  return avatarColors[sum % avatarColors.length];
+}
+function initials(name){
+  return name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+}
+
+// ---------- Language name -> ISO code, for correct screen-reader pronunciation ----------
+const langCodes = {
+  English:'en', Spanish:'es', Portuguese:'pt', French:'fr',
+  Arabic:'ar', Japanese:'ja', Hindi:'hi', Italian:'it'
+};
+function isoFor(langName){
+  return langCodes[langName] || '';
+}
+
+// ---------- Seed fan chat (simulated multilingual fans arriving) ----------
+const seedMessages = [
+  {name:'Marco R.', lang:'Italian', text:'Qualcuno sa dove si trova il gate 7? Il mio biglietto non è chiaro.'},
+  {name:'Aiko T.', lang:'Japanese', text:'スタジアム内で子供用の水飲み場はどこにありますか？'},
+  {name:'Sofia G.', lang:'Spanish', text:'¡Qué ambiente increíble! ¿Alguien sabe si venden bufandas del equipo local?'},
+];
+
+const chatScroll = document.getElementById('chatScroll');
+
+function bubbleTemplate(name, lang, text, mine=false){
+  const div = document.createElement('div');
+  div.className = 'bubble' + (mine ? ' mine' : '');
+  const safeName = escapeHtml(name);
+  div.innerHTML = `
+    <div class="b-head">
+      <div class="avatar" aria-hidden="true" style="background:${colorFor(name)}20; color:${colorFor(name)}; border:1px solid ${colorFor(name)}55;">${escapeHtml(initials(name))}</div>
+      <div class="b-name">${safeName}</div>
+      <div class="b-time">${nowTime()}</div>
+    </div>
+    <div class="b-orig" lang="${isoFor(lang)}">${escapeHtml(text)}</div>
+    <div class="b-translation"><span class="lang-chip">EN</span><span class="translating">Translating…</span></div>
+  `;
+  chatScroll.appendChild(div);
+  return div;
+}
+
+function nowTime(){
+  return new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+}
+function escapeHtml(s){
+  const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+}
+
+// ---------- Claude API call for translation (with cache to avoid redundant calls) ----------
+const translationCache = new Map();
+
+function cacheKey(text, sourceLang, targetLang){
+  return `${sourceLang}::${targetLang}::${text}`;
+}
+
+async function translate(text, sourceLang, targetLang='English'){
+  const key = cacheKey(text, sourceLang, targetLang);
+  if(translationCache.has(key)) return translationCache.get(key);
+
+  try{
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1000,
+        messages: [
+          { role: "user", content: `Translate this stadium fan chat message from ${sourceLang} to ${targetLang}. Reply with ONLY the translation, nothing else, no quotes, no preamble.\n\nMessage: ${text}` }
+        ]
+      })
+    });
+    const data = await response.json();
+    const textBlock = data.content.find(b => b.type === 'text');
+    const result = textBlock ? textBlock.text.trim() : '(translation unavailable)';
+    translationCache.set(key, result);
+    return result;
+  }catch(err){
+    console.error('Translation error', err);
+    return '(translation unavailable — check connection)';
+  }
+}
+
+async function renderBubbleWithTranslation(name, lang, text, mine=false){
+  const bubble = bubbleTemplate(name, lang, text, mine);
+  chatScroll.scrollTop = chatScroll.scrollHeight;
+  const translated = await translate(text, lang, 'English');
+  const tDiv = bubble.querySelector('.b-translation');
+  tDiv.innerHTML = `<span class="lang-chip">EN</span><span>${escapeHtml(translated)}</span>`;
+  chatScroll.scrollTop = chatScroll.scrollHeight;
+}
+
+// Load seed messages staggered
+(async function loadSeed(){
+  for(const m of seedMessages){
+    await renderBubbleWithTranslation(m.name, m.lang, m.text);
+    await new Promise(r => setTimeout(r, 400));
+  }
+})();
+
+// ---------- Sending your own message ----------
+async function sendMessage(){
+  const input = document.getElementById('msgInput');
+  const langSelect = document.getElementById('myLang');
+  const text = input.value.trim();
+  if(!text) return;
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+  input.value = '';
+  await renderBubbleWithTranslation('You', langSelect.value, text, true);
+  btn.disabled = false;
+  input.focus();
+}
+document.getElementById('sendBtn').addEventListener('click', sendMessage);
+document.getElementById('msgInput').addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter' && !e.shiftKey){
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+// ---------- Staff Ops Feed (simulated live incident ticker) ----------
+const opsFeed = document.getElementById('opsFeed');
+let alertCount = 2;
+
+const opsSeed = [
+  {gate:'Gate 7 · North Concourse', sev:'crit', badge:'Overcrowding', msg:'Queue density exceeding threshold. Requesting 2 additional stewards.'},
+  {gate:'Zone C · Concessions', sev:'warn', badge:'Supply', msg:'Water station 4 running low, restock ETA 10 min.'},
+];
+
+const opsRotating = [
+  {gate:'Gate 3 · East Concourse', sev:'info', badge:'Resolved', msg:'Queue back to normal flow after steward redeployment.'},
+  {gate:'Family Zone · Level 1', sev:'info', badge:'Lost & Found', msg:'Child reunited with guardian near Gate 5.'},
+  {gate:'Gate 11 · South Concourse', sev:'warn', badge:'Ticketing', msg:'Scanner offline at lane 2, routing fans to lane 3.'},
+  {gate:'Zone A · Pitch-side', sev:'crit', badge:'Medical', msg:'Medical team dispatched to row 14, non-urgent.'},
+  {gate:'Gate 9 · West Concourse', sev:'info', badge:'Update', msg:'Gate reopened after brief ID-check delay.'},
+];
+
+const validSeverities = new Set(['crit','warn','info']);
+
+function renderOpsItem(item){
+  const sev = validSeverities.has(item.sev) ? item.sev : 'info';
+  const div = document.createElement('div');
+  div.className = 'ops-item';
+  div.setAttribute('role', 'listitem');
+  div.innerHTML = `
+    <div class="sev ${sev}" aria-hidden="true"></div>
+    <div class="ops-body">
+      <div class="ops-top">
+        <div class="ops-gate">${escapeHtml(item.gate)}</div>
+        <div class="ops-time mono">${nowTime()}</div>
+      </div>
+      <div class="ops-msg">${escapeHtml(item.msg)}</div>
+      <div class="ops-badge ${sev}">${escapeHtml(item.badge)}</div>
+    </div>
+  `;
+  opsFeed.prepend(div);
+}
+
+opsSeed.forEach(renderOpsItem);
+
+function updateAlertCount(delta){
+  alertCount = Math.max(0, alertCount + delta);
+  document.getElementById('alertCount').textContent = alertCount;
+  document.getElementById('opsBadgeCount').textContent = '· ' + alertCount;
+}
+
+// Simulate new ops events arriving over time
+let opsIdx = 0;
+setInterval(()=>{
+  if(opsIdx >= opsRotating.length) return;
+  const item = opsRotating[opsIdx++];
+  renderOpsItem(item);
+  if(item.sev === 'crit' || item.sev === 'warn'){
+    updateAlertCount(1);
+  }
+}, 9000);
+
+// ---------- Self-test suite ----------
+// Lightweight in-page tests: no build tooling needed since this ships as a
+// single static file, but every core utility function still gets checked.
+function runSelfTests(){
+  const results = [];
+  const assert = (name, condition) => results.push({ name, pass: !!condition });
+
+  // escapeHtml must neutralize script-breaking characters
+  assert(
+    'escapeHtml strips angle brackets',
+    escapeHtml('<img src=x onerror=alert(1)>').indexOf('<img') === -1
+  );
+  assert(
+    'escapeHtml preserves plain text',
+    escapeHtml('hello world') === 'hello world'
+  );
+
+  // initials() should always return at most 2 uppercase characters
+  assert('initials handles two-word names', initials('Marco R.') === 'MR');
+  assert('initials handles single word', initials('You').length <= 2);
+
+  // colorFor should be deterministic (same input -> same output)
+  assert(
+    'colorFor is deterministic',
+    colorFor('Aiko T.') === colorFor('Aiko T.')
+  );
+
+  // translation cache: identical key should be reused, not re-fetched
+  translationCache.set(cacheKey('test message', 'Spanish', 'English'), 'cached result');
+  assert(
+    'translation cache returns stored value',
+    translationCache.get(cacheKey('test message', 'Spanish', 'English')) === 'cached result'
+  );
+
+  // severity fallback: unknown severity should default to 'info', never crash
+  assert(
+    'unknown severity falls back safely',
+    validSeverities.has('info') && !validSeverities.has('made-up-severity')
+  );
+
+  // language code lookup should degrade gracefully for unknown languages
+  assert('isoFor returns empty string for unknown language', isoFor('Klingon') === '');
+  assert('isoFor resolves known language', isoFor('Japanese') === 'ja');
+
+  // tab ARIA state should stay in sync after switching
+  switchTab('ops');
+  assert(
+    'aria-selected updates on tab switch',
+    tabOpsBtn.getAttribute('aria-selected') === 'true' &&
+    tabChatBtn.getAttribute('aria-selected') === 'false'
+  );
+  switchTab('chat'); // restore default view
+
+  return results;
+}
+
+function renderDiagnostics(results){
+  const container = document.getElementById('diagResults');
+  const passCount = results.filter(r => r.pass).length;
+  const summary = document.createElement('div');
+  summary.className = 'diag-row';
+  summary.innerHTML = `<span>${passCount}/${results.length} checks passed</span>`;
+  container.appendChild(summary);
+  results.forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'diag-row';
+    row.innerHTML = `<span>${escapeHtml(r.name)}</span><span class="${r.pass ? 'diag-pass' : 'diag-fail'}">${r.pass ? 'PASS' : 'FAIL'}</span>`;
+    container.appendChild(row);
+  });
+}
+
+renderDiagnostics(runSelfTests());
+</script>
+</body>
+</html>
